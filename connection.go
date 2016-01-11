@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"sync"
 	"time"
@@ -122,10 +123,10 @@ var APPLE_PUSH_RESPONSES = map[uint8]string{
 	6:   "INVALID_TOPIC_SIZE",
 	7:   "INVALID_PAYLOAD_SIZE",
 	8:   "INVALID_TOKEN",
-	10:  "SHUTDOWN", // apple shutdown connection
+	10:  "SHUTDOWN",              // apple shutdown connection
 	128: "INVALID_FRAME_ITEM_ID", //this is not documented, but ran across it in testing
 	CONNECTION_CLOSED_DISCONNECT: "CONNECTION CLOSED DISCONNECT", // client disconnect (not apple, used internally)
-	CONNECTION_CLOSED_UNKNOWN: "CONNECTION CLOSED UNKNOWN", // client unknown connection error (not apple, used internally)
+	CONNECTION_CLOSED_UNKNOWN:    "CONNECTION CLOSED UNKNOWN",    // client unknown connection error (not apple, used internally)
 	255: "UNKNOWN",
 }
 
@@ -302,6 +303,12 @@ func (c *APNSConnection) closeListener(errCloseChannel chan *AppleError) {
 				ErrorString: err.Error(),
 				MessageID:   0,
 			}
+		} else if err == io.EOF {
+			errCloseChannel <- &AppleError{
+				ErrorCode:   CONNECTION_CLOSED_UNKNOWN, // connection is closed
+				ErrorString: APPLE_PUSH_RESPONSES[CONNECTION_CLOSED_UNKNOWN],
+				MessageID:   0,
+			}
 		} else {
 			errCloseChannel <- &AppleError{
 				ErrorCode:   CONNECTION_CLOSED_UNKNOWN, // don't know why we closed
@@ -387,8 +394,8 @@ func (c *APNSConnection) sendListener(errCloseChannel chan *AppleError) {
 	var errorPayload *Payload
 	// only calculate unsent payloads if messageId is not empty
 	if appleError.ErrorCode != 0 &&
-			appleError.ErrorCode != CONNECTION_CLOSED_DISCONNECT &&
-			appleError.MessageID != 0 {
+		appleError.ErrorCode != CONNECTION_CLOSED_DISCONNECT &&
+		appleError.MessageID != 0 {
 		for e := c.inFlightPayloadBuffer.Front(); e != nil; e = e.Next() {
 			idPayloadObj := e.Value.(*idPayload)
 			if idPayloadObj.ID == appleError.MessageID {
